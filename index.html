@@ -794,13 +794,34 @@ function openSyncModal(){
 
 async function doSyncServices(){
   const commission = parseFloat(document.getElementById('sync-commission').value)||2;
-  document.getElementById('sync-msg').innerHTML='<div class="ok-msg">Syncing... please wait</div>';
-  const r = await api('POST','/api/admin/services/sync-provider',{commission});
-  if(r.ok){
-    document.getElementById('sync-msg').innerHTML=`<div class="ok-msg">✓ ${r.data.message}<br>Added: ${r.data.added} | Updated: ${r.data.updated} | Total: ${r.data.total_from_provider} | Commission: ₹${r.data.commission_applied}</div>`;
-    loadServices();
-  } else {
-    document.getElementById('sync-msg').innerHTML=`<div class="err-msg">${r.data.error||'Sync failed'}</div>`;
+  document.getElementById('sync-msg').innerHTML='<div class="ok-msg">Fetching from SastaOTP...</div>';
+  
+  try {
+    // Step 1: SastaOTP থেকে directly services আনো
+    const r = await fetch('https://sastaotp.com/stubs/handler_api.php?api_key=stp_cc2172ce0a36716dec7110dca1a6fa4f5a6dc7a2ff65a401&action=getServicesList');
+    const data = await r.json();
+    
+    if(data.status !== 'OK'){
+      document.getElementById('sync-msg').innerHTML=`<div class="err-msg">SastaOTP error: ${data.status}</div>`;
+      return;
+    }
+    
+    document.getElementById('sync-msg').innerHTML='<div class="ok-msg">Got services, syncing to database...</div>';
+    
+    // Step 2: Backend এ পাঠাও
+    const result = await api('POST','/api/admin/services/sync-provider',{
+      commission,
+      services: data.services
+    });
+    
+    if(result.ok){
+      document.getElementById('sync-msg').innerHTML=`<div class="ok-msg">✓ ${result.data.message}<br>Added: ${result.data.added} | Updated: ${result.data.updated} | Total: ${result.data.total_from_provider} | Commission: ₹${result.data.commission_applied}</div>`;
+      loadServices();
+    } else {
+      document.getElementById('sync-msg').innerHTML=`<div class="err-msg">${result.data.error||'Sync failed'}</div>`;
+    }
+  } catch(e) {
+    document.getElementById('sync-msg').innerHTML=`<div class="err-msg">Error: ${e.message}</div>`;
   }
 }
   
