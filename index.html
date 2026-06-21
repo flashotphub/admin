@@ -974,16 +974,19 @@ async function saveSettings(type){
 // ── PROVIDER BALANCE ──────────────────────────────────
 async function loadProviderBalance(){
   document.getElementById('provider-body').innerHTML='<div class="loading">Checking…</div>';
-  const r = await api('GET','/api/admin/provider/balance');
-  const d = r.data;
-  document.getElementById('provider-body').innerHTML = `
-    <div style="font-size:12px;color:#666;line-height:2.2">
-      <div>Provider: <b style="color:#111">Lumera SMS</b></div>
-      <div>Status: ${r.ok ? '<span class="badge b-green">Online</span>' : '<span class="badge b-red">Error</span>'}</div>
-      <div>Balance: <span style="font-size:18px;font-weight:700;color:#111">${d.balance!=null?'₹'+parseFloat(d.balance).toFixed(2):'—'}</span></div>
-      <div>Raw response: <span class="mono">${d.raw||'—'}</span></div>
-      ${d.error?`<div style="color:#991b1b">Error: ${d.error}</div>`:''}
-    </div>`;
+  try {
+    const r = await fetch('https://sastaotp.com/stubs/handler_api.php?api_key=stp_cc2172ce0a36716dec7110dca1a6fa4f5a6dc7a2ff65a401&action=getBalance');
+    const text = await r.text();
+    const balance = text.startsWith('ACCESS_BALANCE:') ? text.split(':')[1] : null;
+    document.getElementById('provider-body').innerHTML = `
+      <div style="font-size:12px;color:#666;line-height:2.2">
+        <div>Provider: <b style="color:#111">SastaOTP</b></div>
+        <div>Status: <span class="badge b-green">Online</span></div>
+        <div>Balance: <span style="font-size:18px;font-weight:700;color:#111">${balance ? '₹'+parseFloat(balance).toFixed(2) : text}</span></div>
+      </div>`;
+  } catch(e) {
+    document.getElementById('provider-body').innerHTML='<div class="err-msg">Connection failed</div>';
+  }
 }
 
 // ── WALLET MODAL ──────────────────────────────────────
