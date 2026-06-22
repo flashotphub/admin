@@ -289,16 +289,20 @@ tr:hover td{background:#fafafa}
       <!-- ===== SERVICES ===== -->
       <div class="section" id="section-services">
         <div class="abar">
-          <!-- নতুন: -->
-      <button class="btn btn-primary" onclick="openSvcModal()"><i class="ti ti-plus"></i> Add service</button>
-      <button class="btn" onclick="loadServices()"><i class="ti ti-refresh"></i> Refresh</button>
-      <button class="btn btn-warn" onclick="openSyncModal()"><i class="ti ti-cloud-download"></i> Sync from SastaOTP</button>
+          <input type="text" id="svc-search" placeholder="Search name / code..." oninput="filterServices()" style="min-width:200px;">
+          <select id="svc-country-filter" onchange="filterServices()">
+            <option value="">All countries</option>
+          </select>
+          <button class="btn btn-primary" onclick="openSvcModal()"><i class="ti ti-plus"></i> Add service</button>
+          <button class="btn" onclick="loadServices()"><i class="ti ti-refresh"></i> Refresh</button>
+          <button class="btn btn-warn" onclick="openSyncModal()"><i class="ti ti-cloud-download"></i> Sync from SastaOTP</button>
         </div>
+        <div style="font-size:11px;color:#999;margin-bottom:8px;" id="svc-count"></div>
         <div class="card">
           <div id="services-table"><div class="loading">Loading…</div></div>
         </div>
       </div>
-
+      
       <!-- ===== REDEEM CODES ===== -->
       <div class="section" id="section-redeem">
         <div class="abar">
@@ -669,27 +673,89 @@ async function loadTx(page=1){
 }
 
 // ── SERVICES ──────────────────────────────────────────
+let _adminServices = [];
+
 async function loadServices(){
+  document.getElementById('services-table').innerHTML='<div class="loading">Loading…</div>';
   const r = await api('GET','/api/admin/services');
   if(!r.ok){ document.getElementById('services-table').innerHTML='<div class="empty">Error</div>'; return; }
-  const services = r.data;
-  document.getElementById('services-table').innerHTML = services.length ? `
-    <table><thead><tr><th>Logo</th><th>Name</th><th>API code</th><th>Provider code</th><th>Price</th><th>Provider price</th><th>Profit</th><th>Status</th><th></th></tr></thead>
-    <tbody>${services.map(s=>`<tr>
-      <td>${s.logo_url?`<img src="${s.logo_url}" style="width:24px;height:24px;object-fit:contain;border-radius:4px">`:'—'}</td>
-      <td style="font-weight:600">${s.name}</td>
-      <td class="mono">${s.api_code||s.code||'—'}</td>
-      <td class="mono">${s.provider_code||'—'}</td>
-      <td>${fmt(s.price)}</td>
-      <td>${fmt(s.provider_price)}</td>
-      <td class="profit">${fmt(s.profit)}</td>
-      <td>${statusBadge(s.is_active?'active':'inactive')}</td>
-      <td style="display:flex;gap:4px">
-        <button class="btn btn-xs" onclick='openEditSvcModal(${JSON.stringify(s)})'><i class="ti ti-edit"></i></button>
-        <button class="btn btn-xs btn-danger" onclick="deleteService('${s._id}')"><i class="ti ti-trash"></i></button>
-      </td>
-    </tr>`).join('')}</tbody></table>` : '<div class="empty">No services</div>';
+  _adminServices = r.data;
+
+  // populate country dropdown
+  const countrySet = [...new Set(_adminServices.map(s=>s.country_name||s.country_code||'').filter(Boolean))].sort();
+  const sel = document.getElementById('svc-country-filter');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">All countries</option>' + countrySet.map(c=>`<option value="${c}" ${c===prev?'selected':''}>${c}</option>`).join('');
+
+  filterServices();
 }
+
+function filterServices(){
+  const q = (document.getElementById('svc-search')?.value||'').trim().toLowerCase();
+  const country = document.getElementById('svc-country-filter')?.value||'';
+
+  const filtered = _adminServices.filter(s=>{
+    const matchQ = !q || s.name.toLowerCase().includes(q) || (s.api_code||'').toLowerCase().includes(q) || (s.provider_code||'').toLowerCase().includes(q);
+    const matchC = !country || (s.country_name||s.country_code||'') === country;
+    return matchQ && matchC;
+  });
+
+  document.getElementById('svc-count').textContent = `Showing ${filtered.length} of ${_adminServices.length} services`;
+  renderServicesTable(filtered);
+}
+
+function renderServicesTable(services){
+  document.getElementById('services-table').innerHTML = services.length ? `
+    <table>
+      <thead><tr>
+        <th>Logo</th><th>Name</th><th>Country</th><th>Provider code</th>
+        <th>Price (₹)</th><th>Provider price</th><th>Profit</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody>${services.map(s=>`<tr>
+        <td>${s.logo_url?`<img src="${s.logo_url}" style="width:24px;height:24px;object-fit:contain;border-radius:4px">`:'—'}</td>
+        <td style="font-weight:600;max-width:140px">${s.name}</td>
+        <td style="font-size:11px;color:#666">${s.country_name||s.country_code||'—'}</td>
+        <td class="mono">${s.provider_code||'—'}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="font-size:11px;color:#888">₹</span>
+            <input type="number" step="0.01" value="${parseFloat(s.price).toFixed(2)}"
+              style="width:70px;font-size:12px;font-family:inherit;padding:3px 6px;border:1px solid #e5e5e5;border-radius:4px;outline:none;"
+              onchange="quickUpdatePrice('${s._id}', this.value)"
+              onfocus="this.style.borderColor='#111'" onblur="this.style.borderColor='#e5e5e5'">
+          </div>
+        </td>
+        <td>${fmt(s.provider_price)}</td>
+        <td class="profit" id="profit-${s._id}">${fmt(s.profit)}</td>
+        <td>${statusBadge(s.is_active?'active':'inactive')}</td>
+        <td style="display:flex;gap:4px">
+          <button class="btn btn-xs" onclick='openEditSvcModal(${JSON.stringify(s).replace(/'/g,"&#39;")})'><i class="ti ti-edit"></i></button>
+          <button class="btn btn-xs btn-danger" onclick="deleteService('${s._id}')"><i class="ti ti-trash"></i></button>
+        </td>
+      </tr>`).join('')}
+      </tbody>
+    </table>` : '<div class="empty">No services found</div>';
+}
+
+async function quickUpdatePrice(id, newPrice){
+  const price = parseFloat(newPrice);
+  if(isNaN(price)||price<=0) return;
+  const fd = new FormData();
+  fd.append('price', price);
+  const r = await fetch(BASE+`/api/admin/services/${id}`,{method:'PUT',headers:{Authorization:'Bearer '+TOKEN},body:fd});
+  if(r.ok){
+    // profit update koro inline
+    const svc = _adminServices.find(s=>s._id===id);
+    if(svc){
+      svc.price = price;
+      svc.profit = round2(price - (svc.provider_price||0));
+      const profitEl = document.getElementById('profit-'+id);
+      if(profitEl) profitEl.textContent = fmt(svc.profit);
+    }
+  }
+}
+
+function round2(n){ return Math.round(n*100)/100; }
 
 function openSvcModal(svc=null){
   const edit = !!svc;
