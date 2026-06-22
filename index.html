@@ -748,9 +748,14 @@ function renderServicesTable(services){
         <td class="profit" id="profit-${s._id}">${fmt(s.profit)}</td>
         <td>${statusBadge(s.is_active?'active':'inactive')}</td>
         <td style="display:flex;gap:4px">
-          <button class="btn btn-xs" onclick='openEditSvcModal(${JSON.stringify(s).replace(/'/g,"&#39;")})'><i class="ti ti-edit"></i></button>
-          <button class="btn btn-xs btn-danger" onclick="deleteService('${s._id}')"><i class="ti ti-trash"></i></button>
-        </td>
+  <button class="btn btn-xs ${s.is_pinned?'btn-warn':''}" 
+    onclick="togglePin('${s._id}',${s.is_pinned})" 
+    title="${s.is_pinned?'Unpin':'Pin to top'}">
+    ${s.is_pinned?'📌':'☆'}
+  </button>
+  <button class="btn btn-xs" onclick='openEditSvcModal(${JSON.stringify(s).replace(/'/g,"&#39;")})'><i class="ti ti-edit"></i></button>
+  <button class="btn btn-xs btn-danger" onclick="deleteService('${s._id}')"><i class="ti ti-trash"></i></button>
+</td>
       </tr>`).join('')}
       </tbody>
     </table>` : '<div class="empty">No services found</div>';
@@ -866,6 +871,16 @@ async function deleteService(id){
   if(r.ok) loadServices(); else alert(r.data.error||'Error');
 }
 
+async function togglePin(id, isPinned){
+  const endpoint = isPinned ? 'unpin' : 'pin';
+  const r = await api('POST', `/api/admin/services/${id}/${endpoint}`);
+  if(r.ok){
+    loadServices();
+  } else {
+    alert(r.data.error || 'Error');
+  }
+}
+  
 function openSyncModal(){
   const COUNTRIES = [
     {code:'all', name:'🌍 All Countries (~2700+ services, 2-3 min)'},
