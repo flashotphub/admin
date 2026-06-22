@@ -783,45 +783,40 @@ async function deleteService(id){
 
 function openSyncModal(){
   openModal('Sync services from SastaOTP',`
-    <div style="font-size:12px;color:#666;margin-bottom:14px">
-      This will fetch all services from SastaOTP and add/update them in your database.
-      Existing services will have their provider price updated. Your selling price = provider price + commission.
+    <div style="font-size:12px;color:#666;margin-bottom:14px;">
+      Backend will directly fetch all countries and services from SastaOTP.<br>
+      <b>All countries</b> checked = ~2700+ services (takes 2-3 minutes).
     </div>
     <div class="fg"><label>Commission per service (₹)</label><input id="sync-commission" type="number" step="0.01" value="2" placeholder="2.00"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <input type="checkbox" id="sync-all-countries" checked style="width:15px;height:15px;accent-color:#111;">
+      <label for="sync-all-countries" style="font-size:12px;color:#555;cursor:pointer;">Sync all countries (recommended)</label>
+    </div>
     <div id="sync-msg"></div>
   `,`<button class="btn btn-primary" onclick="doSyncServices()"><i class="ti ti-cloud-download"></i> Sync now</button><button class="btn" onclick="closeModal()">Cancel</button>`);
 }
-
 async function doSyncServices(){
   const commission = parseFloat(document.getElementById('sync-commission').value)||2;
-  document.getElementById('sync-msg').innerHTML='<div class="ok-msg">Fetching from SastaOTP...</div>';
-  
+  const allCountries = document.getElementById('sync-all-countries').checked;
+  const msgEl = document.getElementById('sync-msg');
+  msgEl.innerHTML='<div class="ok-msg">Syncing... this may take 2-3 minutes. Do not close this modal.</div>';
+  const endpoint = allCountries ? '/api/admin/services/sync-all' : '/api/admin/services/sync-provider';
   try {
-    // Step 1: SastaOTP থেকে directly services আনো
-    const r = await fetch('https://sastaotp.com/stubs/handler_api.php?api_key=stp_cc2172ce0a36716dec7110dca1a6fa4f5a6dc7a2ff65a401&action=getServicesList');
-    const data = await r.json();
-    
-    if(data.status !== 'OK'){
-      document.getElementById('sync-msg').innerHTML=`<div class="err-msg">SastaOTP error: ${data.status}</div>`;
-      return;
-    }
-    
-    document.getElementById('sync-msg').innerHTML='<div class="ok-msg">Got services, syncing to database...</div>';
-    
-    // Step 2: Backend এ পাঠাও
-    const result = await api('POST','/api/admin/services/sync-provider',{
-      commission,
-      services: data.services
-    });
-    
+    const result = await api('POST', endpoint, { commission });
     if(result.ok){
-      document.getElementById('sync-msg').innerHTML=`<div class="ok-msg">✓ ${result.data.message}<br>Added: ${result.data.added} | Updated: ${result.data.updated} | Total: ${result.data.total_from_provider} | Commission: ₹${result.data.commission_applied}</div>`;
+      const d = result.data;
+      const errHtml = d.errors?.length ? `<br><span style="color:#991b1b">Errors: ${d.errors.join(', ')}</span>` : '';
+      msgEl.innerHTML=`<div class="ok-msg">
+        ✓ ${d.message}<br>
+        Added: <b>${d.added}</b> | Updated: <b>${d.updated}</b> | Total fetched: <b>${d.total_fetched||d.total_from_provider}</b><br>
+        Commission: ₹${d.commission_applied}${errHtml}
+      </div>`;
       loadServices();
     } else {
-      document.getElementById('sync-msg').innerHTML=`<div class="err-msg">${result.data.error||'Sync failed'}</div>`;
+      msgEl.innerHTML=`<div class="err-msg">${result.data.error||'Sync failed'}</div>`;
     }
   } catch(e) {
-    document.getElementById('sync-msg').innerHTML=`<div class="err-msg">Error: ${e.message}</div>`;
+    msgEl.innerHTML=`<div class="err-msg">Error: ${e.message}</div>`;
   }
 }
   
