@@ -867,16 +867,62 @@ async function deleteService(id){
 }
 
 function openSyncModal(){
+  const COUNTRIES = [
+    {code:'all', name:'🌍 All Countries (~2700+ services, 2-3 min)'},
+    {code:'22', name:'🇮🇳 India'},
+    {code:'0', name:'🇷🇺 Russia'},
+    {code:'1', name:'🇺🇦 Ukraine'},
+    {code:'2', name:'🇰🇿 Kazakhstan'},
+    {code:'3', name:'🇨🇳 China'},
+    {code:'4', name:'🇵🇭 Philippines'},
+    {code:'5', name:'🇲🇲 Myanmar'},
+    {code:'6', name:'🇮🇩 Indonesia'},
+    {code:'7', name:'🇲🇾 Malaysia'},
+    {code:'8', name:'🇰🇪 Kenya'},
+    {code:'10', name:'🇻🇳 Vietnam'},
+    {code:'12', name:'🇺🇸 USA'},
+    {code:'14', name:'🇭🇰 Hong Kong'},
+    {code:'15', name:'🇵🇱 Poland'},
+    {code:'16', name:'🇬🇧 United Kingdom'},
+    {code:'19', name:'🇳🇬 Nigeria'},
+    {code:'21', name:'🇪🇬 Egypt'},
+    {code:'29', name:'🇷🇸 Serbia'},
+    {code:'31', name:'🇿🇦 South Africa'},
+    {code:'33', name:'🇨🇴 Colombia'},
+    {code:'36', name:'🇨🇦 Canada'},
+    {code:'37', name:'🇲🇦 Morocco'},
+    {code:'38', name:'🇬🇭 Ghana'},
+    {code:'40', name:'🇺🇿 Uzbekistan'},
+    {code:'43', name:'🇩🇪 Germany'},
+    {code:'47', name:'🇮🇶 Iraq'},
+    {code:'52', name:'🇹🇭 Thailand'},
+    {code:'53', name:'🇸🇦 Saudi Arabia'},
+    {code:'54', name:'🇲🇽 Mexico'},
+    {code:'56', name:'🇪🇸 Spain'},
+    {code:'60', name:'🇧🇩 Bangladesh'},
+    {code:'62', name:'🇹🇷 Turkey'},
+    {code:'64', name:'🇱🇰 Sri Lanka'},
+    {code:'66', name:'🇵🇰 Pakistan'},
+    {code:'73', name:'🇧🇷 Brazil'},
+    {code:'78', name:'🇫🇷 France'},
+    {code:'81', name:'🇳🇵 Nepal'},
+    {code:'86', name:'🇮🇹 Italy'},
+    {code:'95', name:'🇦🇪 UAE'},
+    {code:'98', name:'🇴🇲 Oman'},
+    {code:'100', name:'🇰🇼 Kuwait'},
+    {code:'111', name:'🇶🇦 Qatar'},
+  ];
   openModal('Sync services from SastaOTP',`
     <div style="font-size:12px;color:#666;margin-bottom:14px;">
-      Backend will directly fetch all countries and services from SastaOTP.<br>
-      <b>All countries</b> checked = ~2700+ services (takes 2-3 minutes).
+      Select a country to sync services from SastaOTP.
+    </div>
+    <div class="fg">
+      <label>Country</label>
+      <select id="sync-country" style="font-size:13px;font-family:inherit;padding:7px 10px;border:1px solid #e5e5e5;border-radius:6px;background:#fff;color:#111;outline:none;width:100%">
+        ${COUNTRIES.map(c=>`<option value="${c.code}" ${c.code==='22'?'selected':''}>${c.name}</option>`).join('')}
+      </select>
     </div>
     <div class="fg"><label>Commission per service (₹)</label><input id="sync-commission" type="number" step="0.01" value="2" placeholder="2.00"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-      <input type="checkbox" id="sync-all-countries" checked style="width:15px;height:15px;accent-color:#111;">
-      <label for="sync-all-countries" style="font-size:12px;color:#555;cursor:pointer;">Sync all countries (recommended)</label>
-    </div>
     <div id="sync-msg"></div>
   `,`<button class="btn btn-primary" onclick="doSyncServices()"><i class="ti ti-cloud-download"></i> Sync now</button><button class="btn" onclick="closeModal()">Cancel</button>`);
 }
@@ -886,56 +932,76 @@ async function doSyncServices(){
   const API_KEY = 'stp_cc2172ce0a36716dec7110dca1a6fa4f5a6dc7a2ff65a401';
   const SASTA_BASE = 'https://sastaotp.com/stubs/handler_api.php';
 
+  const selectedCountry = document.getElementById('sync-country').value;
+  const syncAll = selectedCountry === 'all';
+
   try {
-    // Step 1: country list
-    msgEl.innerHTML='<div class="ok-msg">Fetching country list...</div>';
-    const cr = await fetch(`${SASTA_BASE}?api_key=${API_KEY}&action=getCountries`);
-    const countryData = await cr.json();
-    if(!countryData || countryData.status === 'ERROR'){
-      msgEl.innerHTML=`<div class="err-msg">Failed to fetch countries</div>`; return;
-    }
-    const countries = countryData.countries || countryData;
-    const countryEntries = Object.entries(countries).filter(([code, info]) => code !== 'total' && typeof info === 'object');
-    msgEl.innerHTML=`<div class="ok-msg">Found ${countryEntries.length} countries. Fetching services...</div>`;
-
     let mergedServices = {};
-    let done = 0;
 
-    for(const [code, info] of countryEntries){
-      const countryName = info.name || String(code);
-      const flag = info.flag || '';
-      try {
-        const r = await fetch(`${SASTA_BASE}?api_key=${API_KEY}&action=getServicesList&country=${code}`);
-        const d = await r.json();
-        // response: {status:'OK', services:{...}} OR directly {svcCode:{...}}
-        const svcMap = (d && d.services) ? d.services : (d && d.status === 'OK' ? {} : d);
-        if(svcMap && typeof svcMap === 'object' && !Array.isArray(svcMap)){
-          for(const [svcCode, svc] of Object.entries(svcMap)){
-            if(!svc || typeof svc !== 'object') continue;
-            const uniqueKey = `${svcCode}_${code}`;
-            mergedServices[uniqueKey] = {
-              ...svc,
-              country_code: String(code),
-              country_name: countryName,
-              country_flag: flag,
-              original_code: svc.code || svcCode,
-            };
-          }
+    if(!syncAll){
+      // Single country
+      msgEl.innerHTML=`<div class="ok-msg">Fetching services...</div>`;
+      const r = await fetch(`${SASTA_BASE}?api_key=${API_KEY}&action=getServicesList&country=${selectedCountry}`);
+      const d = await r.json();
+      const svcMap = (d && d.services) ? d.services : d;
+      const sel = document.getElementById('sync-country');
+      const countryName = sel.options[sel.selectedIndex].text.replace(/^\S+\s/,'');
+      if(svcMap && typeof svcMap === 'object' && !Array.isArray(svcMap)){
+        for(const [svcCode, svc] of Object.entries(svcMap)){
+          if(!svc || typeof svc !== 'object' || svc.price === null) continue;
+          mergedServices[svcCode] = {
+            ...svc,
+            country_code: selectedCountry,
+            country_name: countryName,
+            original_code: svc.code || svcCode,
+          };
         }
-      } catch(e) {
-        console.warn(`Country ${code} failed:`, e.message);
       }
-      done++;
-      if(done % 5 === 0 || done === countryEntries.length){
-        msgEl.innerHTML=`<div class="ok-msg">Fetching... ${done}/${countryEntries.length} countries | ${Object.keys(mergedServices).length} services collected</div>`;
+      msgEl.innerHTML=`<div class="ok-msg">Found ${Object.keys(mergedServices).length} services. Saving...</div>`;
+    } else {
+      // All countries
+      msgEl.innerHTML='<div class="ok-msg">Fetching country list...</div>';
+      const cr = await fetch(`${SASTA_BASE}?api_key=${API_KEY}&action=getCountries`);
+      const countryData = await cr.json();
+      if(!countryData || countryData.status === 'ERROR'){
+        msgEl.innerHTML=`<div class="err-msg">Failed to fetch countries</div>`; return;
       }
-      await new Promise(r=>setTimeout(r,120));
+      const countries = countryData.countries || countryData;
+      const countryEntries = Object.entries(countries).filter(([code, info]) => code !== 'total' && typeof info === 'object');
+      msgEl.innerHTML=`<div class="ok-msg">Found ${countryEntries.length} countries. Fetching services...</div>`;
+      let done = 0;
+      for(const [code, info] of countryEntries){
+        const countryName = info.name || String(code);
+        const flag = info.flag || '';
+        try {
+          const r = await fetch(`${SASTA_BASE}?api_key=${API_KEY}&action=getServicesList&country=${code}`);
+          const d = await r.json();
+          const svcMap = (d && d.services) ? d.services : (d && d.status === 'OK' ? {} : d);
+          if(svcMap && typeof svcMap === 'object' && !Array.isArray(svcMap)){
+            for(const [svcCode, svc] of Object.entries(svcMap)){
+              if(!svc || typeof svc !== 'object') continue;
+              const uniqueKey = `${svcCode}_${code}`;
+              mergedServices[uniqueKey] = {
+                ...svc,
+                country_code: String(code),
+                country_name: countryName,
+                country_flag: flag,
+                original_code: svc.code || svcCode,
+              };
+            }
+          }
+        } catch(e) { console.warn(`Country ${code} failed:`, e.message); }
+        done++;
+        if(done % 5 === 0 || done === countryEntries.length){
+          msgEl.innerHTML=`<div class="ok-msg">Fetching... ${done}/${countryEntries.length} countries | ${Object.keys(mergedServices).length} services collected</div>`;
+        }
+        await new Promise(r=>setTimeout(r,120));
+      }
     }
 
     const totalServices = Object.keys(mergedServices).length;
     msgEl.innerHTML=`<div class="ok-msg">Collected ${totalServices} services. Saving to database...</div>`;
 
-    // Step 2: chunk kore backend e pathao
     const entries = Object.entries(mergedServices);
     const chunkSize = 100;
     let totalAdded = 0, totalUpdated = 0;
@@ -951,17 +1017,11 @@ async function doSyncServices(){
       await new Promise(r=>setTimeout(r,500));
     }
 
-    msgEl.innerHTML=`<div class="ok-msg">✓ Sync complete!<br>
-      Countries: <b>${countryEntries.length}</b> | 
-      Services collected: <b>${totalServices}</b><br>
-      Added: <b>${totalAdded}</b> | Updated: <b>${totalUpdated}</b> | 
-      Commission: ₹${commission}
-    </div>`;
+    msgEl.innerHTML=`<div class="ok-msg">✓ Sync complete! Added: <b>${totalAdded}</b> | Updated: <b>${totalUpdated}</b> | Commission: ₹${commission}</div>`;
     loadServices();
   } catch(e) {
     msgEl.innerHTML=`<div class="err-msg">Error: ${e.message}</div>`;
   }
-} 
 // ── REDEEM CODES ──────────────────────────────────────
 async function loadRedeem(page=1){
   redeemPage=page;
