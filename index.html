@@ -937,7 +937,7 @@ async function doSyncServices(){
 
     // Step 2: chunk kore backend e pathao
     const entries = Object.entries(mergedServices);
-    const chunkSize = 500;
+    const chunkSize = 100;
     let totalAdded = 0, totalUpdated = 0;
 
     for(let i=0; i<entries.length; i+=chunkSize){
@@ -948,6 +948,7 @@ async function doSyncServices(){
         totalUpdated += result.data.updated || 0;
       }
       msgEl.innerHTML=`<div class="ok-msg">Saving... ${Math.min(i+chunkSize, entries.length)}/${entries.length}</div>`;
+      await new Promise(r=>setTimeout(r,500));
     }
 
     msgEl.innerHTML=`<div class="ok-msg">✓ Sync complete!<br>
