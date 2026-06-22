@@ -797,29 +797,66 @@ function openSyncModal(){
 }
 async function doSyncServices(){
   const commission = parseFloat(document.getElementById('sync-commission').value)||2;
-  const allCountries = document.getElementById('sync-all-countries').checked;
   const msgEl = document.getElementById('sync-msg');
-  msgEl.innerHTML='<div class="ok-msg">Syncing... this may take 2-3 minutes. Do not close this modal.</div>';
-  const endpoint = allCountries ? '/api/admin/services/sync-all' : '/api/admin/services/sync-provider';
+  const API_KEY = 'stp_cc2172ce0a36716dec7110dca1a6fa4f5a6dc7a2ff65a401';
+  const BASE = 'https://sastaotp.com/stubs/handler_api.php';
+
   try {
-    const result = await api('POST', endpoint, { commission });
-    if(result.ok){
-      const d = result.data;
-      const errHtml = d.errors?.length ? `<br><span style="color:#991b1b">Errors: ${d.errors.join(', ')}</span>` : '';
-      msgEl.innerHTML=`<div class="ok-msg">
-        ✓ ${d.message}<br>
-        Added: <b>${d.added}</b> | Updated: <b>${d.updated}</b> | Total fetched: <b>${d.total_fetched||d.total_from_provider}</b><br>
-        Commission: ₹${d.commission_applied}${errHtml}
-      </div>`;
-      loadServices();
-    } else {
-      msgEl.innerHTML=`<div class="err-msg">${result.data.error||'Sync failed'}</div>`;
+    msgEl.innerHTML='<div class="ok-msg">Fetching country list...</div>';
+    const cr = await fetch(`${BASE}?api_key=${API_KEY}&action=getCountries`);
+    const countryData = await cr.json();
+    if(!countryData || countryData.status === 'ERROR'){
+      msgEl.innerHTML=`<div class="err-msg">Failed to fetch countries</div>`; return;
     }
+
+    const countryEntries = Object.entries(countryData);
+    let mergedServices = {};
+    let done = 0;
+
+    for(const [code, info] of countryEntries){
+      const countryName = typeof info === 'object' ? (info.text_en || info.name || code) : String(info);
+      try {
+        const r = await fetch(`${BASE}?api_key=${API_KEY}&action=getServicesList&country=${code}`);
+        const d = await r.json();
+        if(d.status === 'OK' && d.services){
+          for(const [svcCode, svc] of Object.entries(d.services)){
+            mergedServices[`${svcCode}_${code}`] = {
+              ...svc,
+              country_code: code,
+              country_name: countryName,
+              original_code: svcCode,
+            };
+          }
+        }
+      } catch {}
+      done++;
+      msgEl.innerHTML=`<div class="ok-msg">Fetching... ${done}/${countryEntries.length} countries | ${Object.keys(mergedServices).length} services found</div>`;
+      await new Promise(r=>setTimeout(r,100));
+    }
+
+    msgEl.innerHTML=`<div class="ok-msg">Saving ${Object.keys(mergedServices).length} services to database...</div>`;
+
+    // chunk kore pathao — 500 at a time
+    const entries = Object.entries(mergedServices);
+    const chunkSize = 500;
+    let totalAdded = 0, totalUpdated = 0;
+
+    for(let i=0; i<entries.length; i+=chunkSize){
+      const chunk = Object.fromEntries(entries.slice(i, i+chunkSize));
+      const result = await api('POST', '/api/admin/services/sync-all', { commission, services: chunk });
+      if(result.ok){
+        totalAdded += result.data.added;
+        totalUpdated += result.data.updated;
+      }
+      msgEl.innerHTML=`<div class="ok-msg">Saving... ${Math.min(i+chunkSize, entries.length)}/${entries.length}</div>`;
+    }
+
+    msgEl.innerHTML=`<div class="ok-msg">✓ Sync complete<br>Added: <b>${totalAdded}</b> | Updated: <b>${totalUpdated}</b> | Total: <b>${entries.length}</b></div>`;
+    loadServices();
   } catch(e) {
     msgEl.innerHTML=`<div class="err-msg">Error: ${e.message}</div>`;
   }
-}
-  
+}  
 // ── REDEEM CODES ──────────────────────────────────────
 async function loadRedeem(page=1){
   redeemPage=page;
